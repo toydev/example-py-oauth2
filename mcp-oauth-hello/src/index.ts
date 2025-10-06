@@ -8,6 +8,7 @@
  */
 
 import express from 'express';
+import apiRoutes from './api/routes';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,9 +37,11 @@ app.get('/', (req, res) => {
   });
 });
 
+// Protected API (ESSENTIALS.mdベース)
+app.use('/api', apiRoutes);
+
 // TODO: OAuth認可サーバーの実装
 // TODO: MCP Serverの実装
-// TODO: 保護されたAPIの実装
 
 app.listen(PORT, () => {
   console.log(`🚀 MCP OAuth Hello World running on http://localhost:${PORT}`);
