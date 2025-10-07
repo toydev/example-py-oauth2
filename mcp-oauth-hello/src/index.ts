@@ -24,12 +24,6 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     endpoints: {
       mcp: '/mcp',
-      oauth: {
-        metadata: '/.well-known/oauth-authorization-server',
-        authorize: '/oauth/authorize',
-        token: '/oauth/token',
-        register: '/oauth/register'
-      },
       api: {
         me: '/api/me',
         posts: '/api/posts'

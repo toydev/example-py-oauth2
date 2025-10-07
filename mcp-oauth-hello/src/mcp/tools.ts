@@ -37,8 +37,8 @@ async function callAPI(endpoint: string): Promise<any> {
  */
 export const tools = [
   {
-    name: 'get_user_info',
-    description: 'Get current user information from the external API',
+    name: 'get_demo_info',
+    description: 'Get demo account information (test data only)',
     inputSchema: z.object({}),
     handler: async () => {
       const data = await callAPI('/api/me');
@@ -53,8 +53,8 @@ export const tools = [
     }
   },
   {
-    name: 'get_posts',
-    description: 'Get user posts from the external API',
+    name: 'get_demo_posts',
+    description: 'Get sample posts (test data only)',
     inputSchema: z.object({}),
     handler: async () => {
       const data = await callAPI('/api/posts');
@@ -69,8 +69,8 @@ export const tools = [
     }
   },
   {
-    name: 'get_profile',
-    description: 'Get user profile with statistics from the external API',
+    name: 'get_demo_profile',
+    description: 'Get sample profile with statistics (test data only)',
     inputSchema: z.object({}),
     handler: async () => {
       const data = await callAPI('/api/profile');

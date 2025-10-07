@@ -40,6 +40,9 @@ export function createMCPServer() {
           type: 'object',
           properties: {},
           required: []
+        },
+        annotations: {
+          readOnlyHint: true  // 読み取り専用ツールであることを明示
         }
       }))
     };
