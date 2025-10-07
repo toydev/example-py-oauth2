@@ -9,6 +9,7 @@
 
 import express from 'express';
 import apiRoutes from './api/routes';
+import { handleMCPRequest } from './mcp/server';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -40,8 +41,17 @@ app.get('/', (req, res) => {
 // Protected API (ESSENTIALS.mdベース)
 app.use('/api', apiRoutes);
 
+// MCP Server (公式SDK)
+app.post('/mcp', async (req, res) => {
+  try {
+    await handleMCPRequest(req, res);
+  } catch (error) {
+    console.error('MCP Error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // TODO: OAuth認可サーバーの実装
-// TODO: MCP Serverの実装
 
 app.listen(PORT, () => {
   console.log(`🚀 MCP OAuth Hello World running on http://localhost:${PORT}`);
