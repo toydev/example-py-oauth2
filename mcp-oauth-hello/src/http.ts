@@ -10,12 +10,30 @@
 import express from 'express';
 import apiRoutes from './api/routes';
 import { handleMCPRequest } from './mcp/server';
+import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
+import { SimpleOAuthProvider } from './oauth/provider';
+import { InMemoryClientsStore } from './oauth/clients';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const BASE_URL = `http://localhost:${PORT}`;
+
+// OAuth Provider初期化
+const clientsStore = new InMemoryClientsStore();
+const oauthProvider = new SimpleOAuthProvider();
+oauthProvider.clientsStore = clientsStore;
 
 // Middleware
 app.use(express.json());
+
+// OAuth 2.1 認可サーバー (MCP SDK標準機能)
+// /.well-known/oauth-authorization-server にメタデータを公開
+// /oauth/authorize, /oauth/token, /oauth/register などのエンドポイントを提供
+app.use(mcpAuthRouter({
+  provider: oauthProvider,
+  issuerUrl: new URL(BASE_URL),
+  scopesSupported: ['read', 'write']
+}));
 
 // Health check
 app.get('/', (req, res) => {
@@ -24,9 +42,16 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     endpoints: {
       mcp: '/mcp',
+      oauth: {
+        metadata: '/.well-known/oauth-authorization-server',
+        authorize: '/oauth/authorize',
+        token: '/oauth/token',
+        register: '/oauth/register'
+      },
       api: {
         me: '/api/me',
-        posts: '/api/posts'
+        posts: '/api/posts',
+        profile: '/api/profile'
       }
     }
   });
@@ -44,8 +69,6 @@ app.post('/mcp', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-
-// TODO: OAuth認可サーバーの実装
 
 app.listen(PORT, () => {
   console.log(`🚀 MCP OAuth Hello World running on http://localhost:${PORT}`);
