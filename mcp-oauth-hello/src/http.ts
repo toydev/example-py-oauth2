@@ -31,8 +31,24 @@ app.use(express.json());
 // ngrok などのプロキシ経由でアクセスされる場合に対応
 app.set('trust proxy', true);
 
-// /.well-known/oauth-authorization-server を動的に上書き
-// IMPORTANT: mcpAuthRouter より前に定義する必要がある
+/**
+ * OAuth Authorization Server Metadata (RFC 8414) の動的構築
+ *
+ * 背景:
+ * - mcpAuthRouter は起動時の issuerUrl を使って固定のメタデータを生成
+ * - ngrok 経由のアクセスでは localhost ではなく ngrok URL を返す必要がある
+ * - SDK は動的 URL をサポートしていない（issuer はセキュリティ上固定値であるべきという設計）
+ *
+ * 実装:
+ * - リクエストヘッダー（X-Forwarded-Proto/Host）から実際のアクセスURLを構築
+ * - mcpAuthRouter より前に定義して優先的にマッチさせる
+ * - エンドポイント実装自体は mcpAuthRouter が提供（/authorize, /token, /register）
+ *
+ * トレードオフ:
+ * - メタデータを手動で複製する必要がある（DRY違反）
+ * - SDK の設計思想（固定 issuer）からは外れる
+ * - しかし ngrok などの開発環境では実用的
+ */
 app.get('/.well-known/oauth-authorization-server', (req, res) => {
   const protocol = req.get('x-forwarded-proto') || req.protocol;
   const host = req.get('x-forwarded-host') || req.get('host');
@@ -88,7 +104,18 @@ app.use('/api', createApiRoutes(oauthProvider));
 const mcpUrl = new URL('/mcp', BASE_URL);
 const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(mcpUrl);
 
-// OAuth Protected Resource Metadata for /mcp (RFC 9728)
+/**
+ * OAuth Protected Resource Metadata (RFC 9728) の動的構築
+ *
+ * 背景:
+ * - MCPクライアント（ChatGPT）は /mcp リソースのメタデータを探す
+ * - RFC 9728 に従い、パス付きリソースは /.well-known/oauth-protected-resource/mcp にメタデータを公開
+ * - mcpAuthRouter は mcpAuthMetadataRouter 経由でこれを提供するが、固定 URL
+ *
+ * 実装:
+ * - Authorization Server Metadata と同様に、リクエストから動的に URL を構築
+ * - ngrok 経由でも正しい URL を返す
+ */
 app.get('/.well-known/oauth-protected-resource/mcp', (req, res) => {
   const protocol = req.get('x-forwarded-proto') || req.protocol;
   const host = req.get('x-forwarded-host') || req.get('host');
