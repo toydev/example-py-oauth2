@@ -11,7 +11,7 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { OAuthRegisteredClientsStore } from '@modelcontextprotocol/sdk/server/auth/clients.js';
 import { Response } from 'express';
 import crypto from 'crypto';
-import { accessTokens } from '../api/storage';
+import { accessTokens } from '../api/storage'; // 事前定義トークンのみ
 
 interface AuthorizationCode {
   code: string;
@@ -69,7 +69,7 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
       expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5分
       scope,
       codeChallenge: params.codeChallenge,
-      codeChallengeMethod: params.codeChallengeMethod
+      codeChallengeMethod: 'S256' // OAuth 2.1ではS256固定
     });
 
     // リダイレクトURIに認可コードを付けて返す
@@ -134,22 +134,12 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
     const refreshToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 3600 * 1000); // 1時間
 
-    // トークン保存（OAuth用）
+    // トークン保存
     this.tokens.set(accessToken, {
       accessToken,
       refreshToken,
       userId: code.userId,
       clientId: code.clientId,
-      expiresAt,
-      scope: code.scope
-    });
-
-    // トークンをAPIストレージにも追加
-    // 理由: APIミドルウェア（middleware.ts）がvalidateToken()でトークンを検証するため
-    //      OAuth Providerの内部ストア（this.tokens）とAPIストレージの両方で管理
-    accessTokens.set(accessToken, {
-      token: accessToken,
-      userId: code.userId,
       expiresAt,
       scope: code.scope
     });
@@ -189,22 +179,13 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
 
     // 古いトークン削除
     this.tokens.delete(existingToken.accessToken);
-    accessTokens.delete(existingToken.accessToken);
 
-    // 新しいトークン保存（OAuth用）
+    // 新しいトークン保存
     this.tokens.set(accessToken, {
       accessToken,
       refreshToken,
       userId: existingToken.userId,
       clientId: existingToken.clientId,
-      expiresAt,
-      scope: existingToken.scope
-    });
-
-    // トークンをAPIストレージにも追加（APIミドルウェア用）
-    accessTokens.set(accessToken, {
-      token: accessToken,
-      userId: existingToken.userId,
       expiresAt,
       scope: existingToken.scope
     });
@@ -229,9 +210,7 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
     const oauthToken = this.tokens.get(token);
     if (oauthToken) {
       if (oauthToken.expiresAt < new Date()) {
-        // 期限切れトークンは両方のストアから削除
         this.tokens.delete(token);
-        accessTokens.delete(token);
         throw new Error('Access token expired');
       }
       return {
@@ -243,7 +222,7 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
       };
     }
 
-    // 開発用トークン（stdio版MCP用）をチェック
+    // 事前定義トークン（stdio版MCP用）をチェック
     const apiToken = accessTokens.get(token);
     if (apiToken) {
       if (apiToken.expiresAt < new Date()) {

@@ -8,7 +8,7 @@
  */
 
 import express from 'express';
-import apiRoutes from './api/routes';
+import { createApiRoutes } from './api/routes';
 import { handleMCPRequest } from './mcp/server';
 import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
@@ -60,7 +60,7 @@ app.get('/', (req, res) => {
 });
 
 // Protected API (ESSENTIALS.mdベース)
-app.use('/api', apiRoutes);
+app.use('/api', createApiRoutes(oauthProvider));
 
 // MCP Server (OAuth保護)
 // ESSENTIALS.md: MCPサーバー自体もOAuthで保護されたリソース

@@ -6,7 +6,7 @@
  */
 
 import { Request, Response, NextFunction } from 'express';
-import { validateToken } from './storage';
+import { SimpleOAuthProvider } from '../oauth/provider';
 
 // Expressのリクエストに型を追加
 declare global {
@@ -19,44 +19,47 @@ declare global {
 }
 
 /**
- * Bearer トークン検証ミドルウェア
+ * Bearer トークン検証ミドルウェアファクトリー
  *
  * Authorization: Bearer {token} ヘッダーを検証
  */
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
+export function createRequireAuth(oauthProvider: SimpleOAuthProvider) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const authHeader = req.headers.authorization;
 
-  if (!authHeader) {
-    return res.status(401).json({
-      error: 'unauthorized',
-      error_description: 'Missing Authorization header'
-    });
-  }
+    if (!authHeader) {
+      return res.status(401).json({
+        error: 'unauthorized',
+        error_description: 'Missing Authorization header'
+      });
+    }
 
-  // "Bearer {token}" 形式をパース
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') {
-    return res.status(401).json({
-      error: 'invalid_token',
-      error_description: 'Invalid Authorization header format. Expected: Bearer {token}'
-    });
-  }
+    // "Bearer {token}" 形式をパース
+    const parts = authHeader.split(' ');
+    if (parts.length !== 2 || parts[0] !== 'Bearer') {
+      return res.status(401).json({
+        error: 'invalid_token',
+        error_description: 'Invalid Authorization header format. Expected: Bearer {token}'
+      });
+    }
 
-  const token = parts[1];
-  const accessToken = validateToken(token);
+    const token = parts[1];
 
-  if (!accessToken) {
-    return res.status(401).json({
-      error: 'invalid_token',
-      error_description: 'Token is invalid or expired'
-    });
-  }
+    try {
+      const authInfo = await oauthProvider.verifyAccessToken(token);
 
-  // リクエストにユーザー情報を追加
-  req.userId = accessToken.userId;
-  req.scope = accessToken.scope;
+      // リクエストにユーザー情報を追加
+      req.userId = authInfo.extra?.sub as string;
+      req.scope = authInfo.scopes.join(' ');
 
-  next();
+      next();
+    } catch (error) {
+      return res.status(401).json({
+        error: 'invalid_token',
+        error_description: 'Token is invalid or expired'
+      });
+    }
+  };
 }
 
 /**

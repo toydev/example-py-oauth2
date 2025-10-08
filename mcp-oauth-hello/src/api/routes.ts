@@ -5,10 +5,13 @@
  */
 
 import { Router } from 'express';
-import { requireAuth, requireScope } from './middleware';
+import { createRequireAuth, requireScope } from './middleware';
 import { getUser, getPosts } from './storage';
+import { SimpleOAuthProvider } from '../oauth/provider';
 
-const router = Router();
+export function createApiRoutes(oauthProvider: SimpleOAuthProvider) {
+  const router = Router();
+  const requireAuth = createRequireAuth(oauthProvider);
 
 /**
  * GET /api/me
@@ -80,4 +83,5 @@ router.get('/profile', requireAuth, (req, res) => {
   });
 });
 
-export default router;
+  return router;
+}

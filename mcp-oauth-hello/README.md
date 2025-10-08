@@ -4,30 +4,32 @@ MCP (Model Context Protocol) + OAuth 2.1 Delegated Authorization の実装例
 
 ## 概要
 
-OAuth 2.1で保護されたMCPサーバーを2つの方法で提供：
+認可サーバー、リソースサーバー、MCPサーバーを単一ポートで提供するサンプル実装。
+
+**提供内容:**
+- **認可サーバー**: OAuth 2.1（PKCE対応）
+- **リソースサーバー**: 保護されたAPI（`/api/me`, `/api/posts`, `/api/profile`）
+- **MCPサーバー**: 2つの接続方式（HTTP/stdio）
+
+**設計:**
+- 単一ポート（`:3000`）で全サーバーを統合
+- 理由：ngrok無料版（1ポートのみ）でChatGPT Connectorsから試せるように
+
+**MCP接続方式:**
 
 ```
-1. HTTP版 (Claude Code用 - OAuth認証あり)
-   Claude Code → [OAuth Flow via Browser] → [MCP Server/HTTP + Protected API]
+1. HTTP版
+   MCPクライアント → [ブラウザ認証] → [MCPサーバー/HTTP]
+   （localhost または ngrok経由）
 
-2. stdio版 (Claude Desktop/Claude Code用 - 開発用トークン)
-   Claude Desktop/Code → [MCP Server/stdio] → [API_TOKEN] → [Protected API]
+2. stdio版
+   MCPクライアント → [環境変数トークン] → [MCPサーバー/stdio]
+   （localhost のみ）
 ```
 
 **特徴:**
-- HTTP版：MCPサーバー自体がOAuth 2.1で保護されたリソース（ブラウザ認証フロー）
-- stdio版：開発用トークンで簡易アクセス
-- 認可サーバー、リソースサーバー、MCPサーバーを統合
-- ESSENTIALS.mdで学んだOAuth 2.1の本質を反映した実装
-
-## 実装状況
-
-- ✅ **OAuth 2.1認可サーバー**: Authorization Code Grant + PKCE
-- ✅ **MCP Server (HTTP版)**: Claude Code用（OAuth保護、ブラウザ認証フロー）
-- ✅ **MCP Server (stdio版)**: Claude Desktop/Claude Code用（開発用トークン）
-- ✅ **保護されたAPI**: Bearer トークン認証（`/api/me`, `/api/posts`, `/api/profile`）
-- ✅ **Dynamic Client Registration**: RFC 7591準拠
-- ✅ **OAuthメタデータ**: RFC 8414準拠（/.well-known/oauth-authorization-server）
+- HTTP版：OAuth 2.1ブラウザ認証（外部公開可能）
+- stdio版：事前定義トークン（ローカル専用）
 
 ## アーキテクチャ
 
@@ -43,6 +45,33 @@ OAuth 2.1で保護されたMCPサーバーを2つの方法で提供：
 │  │ /oauth/register  │  │                         │  │
 │  └──────────────────┘  └─────────────────────────┘  │
 └─────────────────────────────────────────────────────┘
+```
+
+## トークン管理
+
+### 2種類のトークン
+
+| 種別 | 発行方法 | 用途 | 有効期限 |
+|------|---------|------|---------|
+| **事前定義トークン** | サーバー起動時に生成<br>`dev-token-12345` | stdio版、curlテスト | 1時間 |
+| **OAuthトークン** | ブラウザ認証フロー<br>（PKCE） | HTTP版 | 1時間 |
+
+両方同時に有効。
+
+**stdio版で事前定義トークンを使う理由:**
+- stdio版はツール呼び出しごとにプロセス起動→終了（メモリ揮発）
+- OAuthトークンを永続化するにはファイル保存が必要
+- 複雑化を避け、環境変数で渡すシンプルな方式を採用
+
+**トークン検証:**
+- 認可サーバー（OAuth Provider）で一元管理
+- リソースサーバーは`verifyAccessToken()`を呼び出してトークン検証
+- OAuthトークンと事前定義トークンの両方に対応
+
+```bash
+# 事前定義トークンでAPIアクセス
+curl -H "Authorization: Bearer dev-token-12345" \
+  http://localhost:3000/api/me
 ```
 
 ## ファイル構成
@@ -72,80 +101,55 @@ npm install
 
 ## 使い方
 
-### HTTP版（外部公開用）
-
-ngrokで公開すると、外部のMCPクライアント（ChatGPT Connectorsなど）からアクセス可能です：
+### HTTP版
 
 ```bash
-# サーバー起動
 npm run http
-
-# 別ターミナルでngrokで公開
-ngrok http 3000
-# → https://xxxx.ngrok.io が公開URL
 ```
 
-公開URLのエンドポイント：
-- MCP: `https://xxxx.ngrok.io/mcp`
-- OAuth: `https://xxxx.ngrok.io/.well-known/oauth-authorization-server`
+**.mcp.json:**
+```json
+{
+  "mcpServers": {
+    "external-api-client": {
+      "type": "http",
+      "url": "http://localhost:3000/mcp"
+    }
+  }
+}
+```
 
-### HTTP版（Claude Code用）
+Claude Code再起動後、ブラウザで自動的にOAuth認証が開始されます。
 
-**HTTP版はMCPサーバー自体がOAuth保護されており、ブラウザでの認証フローが必要です。**
+**外部公開（ngrok）:**
+```bash
+ngrok http 3000
+# → https://xxxx.ngrok.io/mcp
+```
 
-#### セットアップ手順
+### stdio版
 
-1. **HTTPサーバーを起動**
-   ```bash
-   npm run http
-   ```
+```bash
+npm run http  # 別ターミナルでAPIサーバーとして起動
+```
 
-2. **MCP設定を追加**（`.mcp.json`）
-   ```json
-   {
-     "mcpServers": {
-       "external-api-client": {
-         "type": "http",
-         "url": "http://localhost:3000/mcp"
-       }
-     }
-   }
-   ```
+**.mcp.json:**
+```json
+{
+  "mcpServers": {
+    "external-api-client": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["tsx", "src/stdio.ts"],
+      "env": {
+        "API_TOKEN": "dev-token-12345"
+      }
+    }
+  }
+}
+```
 
-3. **Claude Codeを再起動**
-
-#### OAuthフロー
-
-Claude CodeがHTTP版MCPサーバーに接続する際、MCP SDKの標準OAuth機能によってブラウザで認証フローが開始されます。
-
-### stdio版（Claude Desktop/Claude Code用 - 開発用トークン）
-
-**stdio版は開発用トークンで簡易アクセスします（OAuth認証なし）。**
-
-#### セットアップ手順
-
-1. **HTTPサーバーを起動**（別ターミナル - APIサーバーとして）
-   ```bash
-   npm run http
-   ```
-
-2. **MCP設定を追加**（`.mcp.json`）
-   ```json
-   {
-     "mcpServers": {
-       "external-api-client": {
-         "type": "stdio",
-         "command": "npx",
-         "args": ["tsx", "src/stdio.ts"],
-         "env": {
-           "API_TOKEN": "dev-token-12345"
-         }
-       }
-     }
-   }
-   ```
-
-3. **Claude Codeを再起動**
+Claude Code再起動で利用可能。
 
 ## MCPツール
 
@@ -157,164 +161,48 @@ Claude CodeがHTTP版MCPサーバーに接続する際、MCP SDKの標準OAuth�
 | `get_demo_posts` | サンプル投稿一覧取得 | なし |
 | `get_demo_profile` | サンプルプロフィール取得 | なし |
 
-## トークン管理
+## OAuth 2.1実装
 
-### 2種類のトークン
+### PKCE
 
-システムは2種類のアクセストークンを同時にサポートします：
+OAuth 2.1必須セキュリティ機能。認可コード傍受攻撃を防止：
 
-| トークン種別 | 発行方法 | 用途 | 有効期限 |
-|------------|---------|------|---------|
-| **開発用トークン** | 事前定義（`dev-token-12345`） | stdio版MCP、curlテスト | サーバー起動から1時間 |
-| **OAuthトークン** | OAuth 2.1フロー（PKCE） | HTTP版MCP（Claude Code） | 発行から1時間 |
+1. 認可時：`code_challenge`送信
+2. トークン交換時：`code_verifier`送信
+3. 検証：`SHA256(code_verifier) == code_challenge`
 
-両方のトークンが同時に有効で、APIアクセスに使用できます。
+### フロー
 
-```bash
-# 開発用トークンでAPIアクセス
-curl -H "Authorization: Bearer dev-token-12345" \
-  http://localhost:3000/api/me
-```
-
-### トークン検証アーキテクチャ
-
-トークンは2箇所で管理されます：
-
-```typescript
-// 1. OAuth Provider内部ストア（OAuthトークンのみ）
-this.tokens: Map<string, StoredToken>
-
-// 2. APIストレージ（開発用トークン + OAuthトークン）
-accessTokens: Map<string, AccessToken>
-```
-
-**検証フロー** (`provider.ts:verifyAccessToken`):
-1. OAuth Provider内部ストアをチェック
-2. APIストレージをチェック（開発用 + OAuth発行分）
-
-**理由**: APIミドルウェア（`middleware.ts`）は`validateToken()`で`accessTokens`のみを参照するため、OAuthで発行したトークンも`accessTokens`に追加して、API検証を可能にしています。
-
-## OAuth 2.1フロー
-
-### PKCE（必須セキュリティ機能）
-
-OAuth 2.1ではPKCE (Proof Key for Code Exchange) が必須です：
-
-1. **認可リクエスト時**: クライアントが`code_challenge`を送信
-2. **トークン交換時**: クライアントが`code_verifier`を送信
-3. **サーバー検証**: `SHA256(code_verifier) == code_challenge`を確認
-
-これにより、認可コードの傍受攻撃を防ぎます。
-
-### Authorization Code Grant
-
-1. **クライアント登録** (Dynamic Client Registration)
-```bash
-curl -X POST http://localhost:3000/oauth/register \
-  -H "Content-Type: application/json" \
-  -d '{"redirect_uris":["https://example.com/callback"]}'
-```
-
-2. **認可リクエスト**
-```
-GET /oauth/authorize?
-  response_type=code&
-  client_id={client_id}&
-  redirect_uri={redirect_uri}&
-  scope=read write&
-  state={random_state}&
-  code_challenge={pkce_challenge}&
-  code_challenge_method=S256
-```
-
-3. **トークン取得**
-```bash
-curl -X POST http://localhost:3000/oauth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=authorization_code&code={code}&client_id={client_id}&client_secret={client_secret}&code_verifier={pkce_verifier}"
-```
-
-4. **リソースアクセス**
-```bash
-curl -H "Authorization: Bearer {access_token}" \
-  http://localhost:3000/mcp
-```
+1. クライアント登録（Dynamic Client Registration / RFC 7591）
+2. 認可リクエスト（`code_challenge`含む）
+3. ユーザー認証・同意
+4. 認可コード発行
+5. トークン交換（`code_verifier`で検証）
+6. アクセストークン発行
 
 ## 技術スタック
 
-- **MCP SDK**: @modelcontextprotocol/sdk v1.0.4
-  - MCPサーバー実装（HTTP + stdio）
-  - OAuth 2.1認可サーバー（`mcpAuthRouter`）
-  - Bearer認証ミドルウェア（`requireBearerAuth`）
-- **Web**: Express + TypeScript
-- **開発**: tsx (TypeScript実行)
-- **デプロイ**: ngrok（開発用）
+- MCP SDK v1.0.4（MCPサーバー、OAuth 2.1認可サーバー）
+- Express + TypeScript
+- tsx（TypeScript実行）
+- ngrok（外部公開）
 
-## 重要な知見
+## 設計ポイント
 
-### ESSENTIALS.mdの本質を反映
+### OAuth 2.1の本質
 
-OAuth 2.1の2つの根本課題を解決：
-1. **パスワード保護問題** → Delegated Authorization
-2. **ブラウザ露出問題** → Authorization Code Grant + PKCE
+2つの根本課題を解決：
+1. パスワード保護問題 → Delegated Authorization
+2. ブラウザ露出問題 → Authorization Code Grant + PKCE
 
-### MCPエンドポイントのOAuth保護
+### MCPサーバーの保護
 
-MCPサーバー自体を保護されたリソースとして扱う：
+MCPエンドポイント自体をOAuth保護されたリソースとして実装。
 
-```typescript
-app.post('/mcp',
-  requireBearerAuth({
-    verifier: oauthProvider,
-    resourceMetadataUrl
-  }),
-  async (req, res) => {
-    await handleMCPRequest(req, res);
-  }
-);
-```
+### ツール安全性
 
-### ChatGPT Connectorsの安全性チェック
-
-ChatGPTはツール説明を解析して安全性を判断：
-
-- ❌ "user information", "external API" → 危険と判断
-- ✅ "demo", "sample", "(test data only)" → 安全と判断
-
-### readOnlyHintアノテーション
-
-読み取り専用ツールは`readOnlyHint: true`を設定：
-
-```typescript
-{
-  name: "get_demo_info",
-  description: "Get demo account information (test data only)",
-  annotations: {
-    readOnlyHint: true
-  }
-}
-```
-
-## テスト
-
-```bash
-# OAuthメタデータ確認
-curl http://localhost:3000/.well-known/oauth-authorization-server
-
-# 認証なしアクセス（拒否される）
-curl -X POST http://localhost:3000/mcp
-
-# Bearer トークン付きアクセス（成功）
-curl -X POST http://localhost:3000/mcp \
-  -H "Authorization: Bearer dev-token-12345" \
-  -H "Accept: application/json, text/event-stream" \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"tools/list","id":1}'
-
-# 保護されたAPI
-curl -H "Authorization: Bearer dev-token-12345" \
-  http://localhost:3000/api/profile
-```
+- `readOnlyHint: true`で読み取り専用を明示
+- ツール説明に`(test data only)`を含めて安全性を示す
 
 ## 参考
 
