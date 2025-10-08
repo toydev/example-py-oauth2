@@ -14,6 +14,7 @@ import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelconte
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { SimpleOAuthProvider } from './oauth/provider';
 import { InMemoryClientsStore } from './oauth/clients';
+import { requestContext } from './mcp/context';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -73,7 +74,17 @@ app.post('/mcp',
   }),
   async (req, res) => {
     try {
-      await handleMCPRequest(req, res);
+      // トークンを取得してコンテキストに設定
+      const token = req.headers.authorization?.replace('Bearer ', '');
+      if (!token) {
+        res.status(401).json({ error: 'No token provided' });
+        return;
+      }
+
+      // トークンをコンテキストに設定してリクエスト処理
+      await requestContext.run({ token }, async () => {
+        await handleMCPRequest(req, res);
+      });
     } catch (error) {
       console.error('MCP Error:', error);
       res.status(500).json({ error: 'Internal server error' });

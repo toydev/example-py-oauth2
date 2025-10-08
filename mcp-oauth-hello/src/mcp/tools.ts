@@ -6,7 +6,31 @@
  */
 
 import { z } from 'zod';
-import { callAPI } from '../client/apiClient.js';
+import { getToken } from './context.js';
+
+const API_BASE = process.env.API_BASE || 'http://localhost:3000';
+
+/**
+ * 外部APIへのHTTPリクエスト
+ */
+async function callAPI(endpoint: string): Promise<any> {
+  const token = getToken(); // コンテキストまたは環境変数から取得
+  const url = `${API_BASE}${endpoint}`;
+
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(`API Error: ${error.error} - ${error.error_description || ''}`);
+  }
+
+  return response.json();
+}
 
 /**
  * ツール定義
