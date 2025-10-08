@@ -103,11 +103,14 @@ npm install
 
 ### HTTP版
 
+**1. サーバー起動:**
 ```bash
 npm run http
 ```
 
-**.mcp.json:**
+**2. Claude Code:**
+
+`.mcp.json`に追加：
 ```json
 {
   "mcpServers": {
@@ -119,13 +122,17 @@ npm run http
 }
 ```
 
-Claude Code再起動後、ブラウザで自動的にOAuth認証が開始されます。
+Claude Code再起動後、`/mcp` コマンド → `Authenticate` でブラウザ認証。
 
-**外部公開（ngrok）:**
+**3. ChatGPT Connectors（外部公開）:**
+
+ngrokで公開：
 ```bash
 ngrok http 3000
 # → https://xxxx.ngrok.io/mcp
 ```
+
+ChatGPT Connectorsの設定でngrok URLを指定。
 
 ### stdio版
 
@@ -201,8 +208,19 @@ MCPエンドポイント自体をOAuth保護されたリソースとして実装
 
 ### ツール安全性
 
-- `readOnlyHint: true`で読み取り専用を明示
-- ツール説明に`(test data only)`を含めて安全性を示す
+ChatGPT Connectorsはツール説明を解析して安全性を判断していると推測されます（未検証）：
+
+**拒否された例:**
+- `"Get user information"` - 実データへのアクセスと判断された可能性
+- `"external API"` - 外部サービスへの影響と判断された可能性
+
+**許可された例:**
+- `"Get demo account information (test data only)"` - テストデータと明記
+- `"Get sample posts (test data only)"` - サンプルデータと明記
+
+**実装:**
+- すべてのツールに`readOnlyHint: true`を設定（読み取り専用）
+- ツール説明に`(test data only)`を含める（安全性の明示）
 
 ## 参考
 
