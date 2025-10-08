@@ -19,6 +19,9 @@ interface AuthorizationCode {
   userId: string;
   expiresAt: Date;
   scope: string;
+  // PKCE (Proof Key for Code Exchange) サポート
+  codeChallenge?: string;
+  codeChallengeMethod?: string;
 }
 
 interface StoredToken {
@@ -64,7 +67,9 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
       clientId: client.client_id,
       userId,
       expiresAt: new Date(Date.now() + 5 * 60 * 1000), // 5分
-      scope
+      scope,
+      codeChallenge: params.codeChallenge,
+      codeChallengeMethod: params.codeChallengeMethod
     });
 
     // リダイレクトURIに認可コードを付けて返す
@@ -79,6 +84,8 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
 
   /**
    * 認可コード検証（PKCE用）
+   *
+   * トークン交換時にcode_verifierを検証するため、保存済みのcode_challengeを返す
    */
   async challengeForAuthorizationCode(
     client: OAuthClientInformationFull,
@@ -95,8 +102,7 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
       throw new Error('Authorization code expired');
     }
 
-    // デモ用: PKCEチャレンジを返す（本番環境では保存済みのチャレンジを返す）
-    return '';
+    return code.codeChallenge || '';
   }
 
   /**
@@ -126,14 +132,25 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
     // アクセストークンとリフレッシュトークン生成
     const accessToken = crypto.randomBytes(32).toString('hex');
     const refreshToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 3600 * 1000); // 1時間
 
-    // トークン保存
+    // トークン保存（OAuth用）
     this.tokens.set(accessToken, {
       accessToken,
       refreshToken,
       userId: code.userId,
       clientId: code.clientId,
-      expiresAt: new Date(Date.now() + 3600 * 1000), // 1時間
+      expiresAt,
+      scope: code.scope
+    });
+
+    // トークンをAPIストレージにも追加
+    // 理由: APIミドルウェア（middleware.ts）がvalidateToken()でトークンを検証するため
+    //      OAuth Providerの内部ストア（this.tokens）とAPIストレージの両方で管理
+    accessTokens.set(accessToken, {
+      token: accessToken,
+      userId: code.userId,
+      expiresAt,
       scope: code.scope
     });
 
@@ -168,17 +185,27 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
 
     // 新しいアクセストークン生成
     const accessToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 3600 * 1000);
 
     // 古いトークン削除
     this.tokens.delete(existingToken.accessToken);
+    accessTokens.delete(existingToken.accessToken);
 
-    // 新しいトークン保存
+    // 新しいトークン保存（OAuth用）
     this.tokens.set(accessToken, {
       accessToken,
       refreshToken,
       userId: existingToken.userId,
       clientId: existingToken.clientId,
-      expiresAt: new Date(Date.now() + 3600 * 1000),
+      expiresAt,
+      scope: existingToken.scope
+    });
+
+    // トークンをAPIストレージにも追加（APIミドルウェア用）
+    accessTokens.set(accessToken, {
+      token: accessToken,
+      userId: existingToken.userId,
+      expiresAt,
       scope: existingToken.scope
     });
 
@@ -198,11 +225,13 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
    * APIストレージと共有してトークンを検証
    */
   async verifyAccessToken(token: string): Promise<AuthInfo> {
-    // まずOAuthで発行されたトークンをチェック
+    // OAuthで発行されたトークンをチェック
     const oauthToken = this.tokens.get(token);
     if (oauthToken) {
       if (oauthToken.expiresAt < new Date()) {
+        // 期限切れトークンは両方のストアから削除
         this.tokens.delete(token);
+        accessTokens.delete(token);
         throw new Error('Access token expired');
       }
       return {
@@ -214,7 +243,7 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
       };
     }
 
-    // 次に開発用トークン（APIストレージ）をチェック
+    // 開発用トークン（stdio版MCP用）をチェック
     const apiToken = accessTokens.get(token);
     if (apiToken) {
       if (apiToken.expiresAt < new Date()) {

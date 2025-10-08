@@ -76,6 +76,7 @@ app.post('/mcp',
     try {
       // トークンを取得してコンテキストに設定
       const token = req.headers.authorization?.replace('Bearer ', '');
+
       if (!token) {
         res.status(401).json({ error: 'No token provided' });
         return;
