@@ -32,6 +32,9 @@ env/
 *.swo
 *~
 
+# MCP Configuration (personal settings)
+.mcp.json
+
 # OS
 .DS_Store
 Thumbs.db

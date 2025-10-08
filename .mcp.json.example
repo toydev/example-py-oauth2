@@ -2,8 +2,8 @@
   "mcpServers": {
     "external-api-client": {
       "type": "stdio",
-      "command": "/mnt/d/Workspace/Sandbox/auth/mcp-oauth-hello/test-mcp.sh",
-      "args": [],
+      "command": "npx",
+      "args": ["tsx", "mcp-oauth-hello/src/stdio.ts"],
       "env": {}
     }
   }

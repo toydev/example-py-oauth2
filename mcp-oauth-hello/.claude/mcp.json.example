@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "external-api-client": {
-      "command": "npm",
-      "args": ["run", "mcp"],
-      "cwd": "/absolute/path/to/mcp-oauth-hello"
-    }
-  }
-}
