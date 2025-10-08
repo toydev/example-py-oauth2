@@ -10,7 +10,8 @@
 import express from 'express';
 import apiRoutes from './api/routes';
 import { handleMCPRequest } from './mcp/server';
-import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
+import { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } from '@modelcontextprotocol/sdk/server/auth/router.js';
+import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { SimpleOAuthProvider } from './oauth/provider';
 import { InMemoryClientsStore } from './oauth/clients';
 
@@ -60,15 +61,25 @@ app.get('/', (req, res) => {
 // Protected API (ESSENTIALS.mdベース)
 app.use('/api', apiRoutes);
 
-// MCP Server (公式SDK)
-app.post('/mcp', async (req, res) => {
-  try {
-    await handleMCPRequest(req, res);
-  } catch (error) {
-    console.error('MCP Error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+// MCP Server (OAuth保護)
+// ESSENTIALS.md: MCPサーバー自体もOAuthで保護されたリソース
+const mcpUrl = new URL('/mcp', BASE_URL);
+const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(mcpUrl);
+
+app.post('/mcp',
+  requireBearerAuth({
+    verifier: oauthProvider,
+    resourceMetadataUrl
+  }),
+  async (req, res) => {
+    try {
+      await handleMCPRequest(req, res);
+    } catch (error) {
+      console.error('MCP Error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
-});
+);
 
 app.listen(PORT, () => {
   console.log(`🚀 MCP OAuth Hello World running on http://localhost:${PORT}`);

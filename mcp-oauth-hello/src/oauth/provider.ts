@@ -11,6 +11,7 @@ import { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import { OAuthRegisteredClientsStore } from '@modelcontextprotocol/sdk/server/auth/clients.js';
 import { Response } from 'express';
 import crypto from 'crypto';
+import { accessTokens } from '../api/storage';
 
 interface AuthorizationCode {
   code: string;
@@ -194,22 +195,41 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
    * アクセストークン検証
    *
    * ESSENTIALS.md: リソースサーバーでのトークン検証
+   * APIストレージと共有してトークンを検証
    */
   async verifyAccessToken(token: string): Promise<AuthInfo> {
-    const storedToken = this.tokens.get(token);
-
-    if (!storedToken) {
-      throw new Error('Invalid access token');
+    // まずOAuthで発行されたトークンをチェック
+    const oauthToken = this.tokens.get(token);
+    if (oauthToken) {
+      if (oauthToken.expiresAt < new Date()) {
+        this.tokens.delete(token);
+        throw new Error('Access token expired');
+      }
+      return {
+        token,
+        clientId: oauthToken.clientId,
+        scopes: oauthToken.scope.split(' '),
+        expiresAt: Math.floor(oauthToken.expiresAt.getTime() / 1000),
+        extra: { sub: oauthToken.userId }
+      };
     }
 
-    if (storedToken.expiresAt < new Date()) {
-      this.tokens.delete(token);
-      throw new Error('Access token expired');
+    // 次に開発用トークン（APIストレージ）をチェック
+    const apiToken = accessTokens.get(token);
+    if (apiToken) {
+      if (apiToken.expiresAt < new Date()) {
+        accessTokens.delete(token);
+        throw new Error('Access token expired');
+      }
+      return {
+        token,
+        clientId: 'dev-client',
+        scopes: apiToken.scope.split(' '),
+        expiresAt: Math.floor(apiToken.expiresAt.getTime() / 1000),
+        extra: { sub: apiToken.userId }
+      };
     }
 
-    return {
-      sub: storedToken.userId,
-      scope: storedToken.scope
-    };
+    throw new Error('Invalid access token');
   }
 }
