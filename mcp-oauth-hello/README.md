@@ -35,13 +35,13 @@ OAuth 2.1で保護されたMCPサーバーを2つの方法で提供：
 ┌─────────────────────────────────────────────────────┐
 │              MCP OAuth Hello World                  │
 │                                                     │
-│  ┌──────────────────┐  ┌─────────────────────────┐ │
-│  │ OAuth 2.1 AS     │  │ MCP Server + RS         │ │
-│  │                  │  │                         │ │
-│  │ /oauth/authorize │  │ /mcp (OAuth protected)  │ │
-│  │ /oauth/token     │  │ /api/* (OAuth protected)│ │
-│  │ /oauth/register  │  │                         │ │
-│  └──────────────────┘  └─────────────────────────┘ │
+│  ┌──────────────────┐  ┌─────────────────────────┐  │
+│  │ OAuth 2.1 AS     │  │ MCP Server + RS         │  │
+│  │                  │  │                         │  │
+│  │ /oauth/authorize │  │ /mcp (OAuth protected)  │  │
+│  │ /oauth/token     │  │ /api/* (OAuth protected)│  │
+│  │ /oauth/register  │  │                         │  │
+│  └──────────────────┘  └─────────────────────────┘  │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -72,7 +72,9 @@ npm install
 
 ## 使い方
 
-### HTTP版（ChatGPT Connectors用）
+### HTTP版（外部公開用）
+
+ngrokで公開すると、外部のMCPクライアント（ChatGPT Connectorsなど）からアクセス可能です：
 
 ```bash
 # サーバー起動
@@ -80,27 +82,14 @@ npm run http
 
 # 別ターミナルでngrokで公開
 ngrok http 3000
+# → https://xxxx.ngrok.io が公開URL
 ```
 
-エンドポイント一覧（http://localhost:3000/）:
-```json
-{
-  "mcp": "/mcp",
-  "oauth": {
-    "metadata": "/.well-known/oauth-authorization-server",
-    "authorize": "/oauth/authorize",
-    "token": "/oauth/token",
-    "register": "/oauth/register"
-  },
-  "api": {
-    "me": "/api/me",
-    "posts": "/api/posts",
-    "profile": "/api/profile"
-  }
-}
-```
+公開URLのエンドポイント：
+- MCP: `https://xxxx.ngrok.io/mcp`
+- OAuth: `https://xxxx.ngrok.io/.well-known/oauth-authorization-server`
 
-### HTTP版（Claude Code用 - OAuth認証あり）
+### HTTP版（Claude Code用）
 
 **HTTP版はMCPサーバー自体がOAuth保護されており、ブラウザでの認証フローが必要です。**
 
@@ -168,19 +157,56 @@ Claude CodeがHTTP版MCPサーバーに接続する際、MCP SDKの標準OAuth�
 | `get_demo_posts` | サンプル投稿一覧取得 | なし |
 | `get_demo_profile` | サンプルプロフィール取得 | なし |
 
-## OAuth 2.1フロー
+## トークン管理
 
-### 開発用トークン
+### 2種類のトークン
 
-開発・テスト用に事前発行されたトークン：
+システムは2種類のアクセストークンを同時にサポートします：
+
+| トークン種別 | 発行方法 | 用途 | 有効期限 |
+|------------|---------|------|---------|
+| **開発用トークン** | 事前定義（`dev-token-12345`） | stdio版MCP、curlテスト | サーバー起動から1時間 |
+| **OAuthトークン** | OAuth 2.1フロー（PKCE） | HTTP版MCP（Claude Code） | 発行から1時間 |
+
+両方のトークンが同時に有効で、APIアクセスに使用できます。
 
 ```bash
-# Bearer トークン: dev-token-12345
+# 開発用トークンでAPIアクセス
 curl -H "Authorization: Bearer dev-token-12345" \
   http://localhost:3000/api/me
 ```
 
-### Authorization Code Grant（実装済み）
+### トークン検証アーキテクチャ
+
+トークンは2箇所で管理されます：
+
+```typescript
+// 1. OAuth Provider内部ストア（OAuthトークンのみ）
+this.tokens: Map<string, StoredToken>
+
+// 2. APIストレージ（開発用トークン + OAuthトークン）
+accessTokens: Map<string, AccessToken>
+```
+
+**検証フロー** (`provider.ts:verifyAccessToken`):
+1. OAuth Provider内部ストアをチェック
+2. APIストレージをチェック（開発用 + OAuth発行分）
+
+**理由**: APIミドルウェア（`middleware.ts`）は`validateToken()`で`accessTokens`のみを参照するため、OAuthで発行したトークンも`accessTokens`に追加して、API検証を可能にしています。
+
+## OAuth 2.1フロー
+
+### PKCE（必須セキュリティ機能）
+
+OAuth 2.1ではPKCE (Proof Key for Code Exchange) が必須です：
+
+1. **認可リクエスト時**: クライアントが`code_challenge`を送信
+2. **トークン交換時**: クライアントが`code_verifier`を送信
+3. **サーバー検証**: `SHA256(code_verifier) == code_challenge`を確認
+
+これにより、認可コードの傍受攻撃を防ぎます。
+
+### Authorization Code Grant
 
 1. **クライアント登録** (Dynamic Client Registration)
 ```bash
