@@ -28,9 +28,30 @@ oauthProvider.clientsStore = clientsStore;
 // Middleware
 app.use(express.json());
 
-// OAuth 2.1 認可サーバー (MCP SDK標準機能)
-// /.well-known/oauth-authorization-server にメタデータを公開
-// /oauth/authorize, /oauth/token, /oauth/register などのエンドポイントを提供
+// ngrok などのプロキシ経由でアクセスされる場合に対応
+app.set('trust proxy', true);
+
+// /.well-known/oauth-authorization-server を動的に上書き
+// IMPORTANT: mcpAuthRouter より前に定義する必要がある
+app.get('/.well-known/oauth-authorization-server', (req, res) => {
+  const protocol = req.get('x-forwarded-proto') || req.protocol;
+  const host = req.get('x-forwarded-host') || req.get('host');
+  const baseUrl = `${protocol}://${host}`;
+  res.json({
+    issuer: baseUrl + '/',
+    authorization_endpoint: `${baseUrl}/authorize`,
+    response_types_supported: ['code'],
+    code_challenge_methods_supported: ['S256'],
+    token_endpoint: `${baseUrl}/token`,
+    token_endpoint_auth_methods_supported: ['client_secret_post'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
+    scopes_supported: ['read', 'write'],
+    registration_endpoint: `${baseUrl}/register`
+  });
+});
+
+// OAuth 2.1 認可サーバー
+// mcpAuthRouter を使用してエンドポイント提供
 app.use(mcpAuthRouter({
   provider: oauthProvider,
   issuerUrl: new URL(BASE_URL),
@@ -66,6 +87,18 @@ app.use('/api', createApiRoutes(oauthProvider));
 // ESSENTIALS.md: MCPサーバー自体もOAuthで保護されたリソース
 const mcpUrl = new URL('/mcp', BASE_URL);
 const resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(mcpUrl);
+
+// OAuth Protected Resource Metadata for /mcp (RFC 9728)
+app.get('/.well-known/oauth-protected-resource/mcp', (req, res) => {
+  const protocol = req.get('x-forwarded-proto') || req.protocol;
+  const host = req.get('x-forwarded-host') || req.get('host');
+  const baseUrl = `${protocol}://${host}`;
+  res.json({
+    resource: `${baseUrl}/mcp`,
+    authorization_servers: [baseUrl + '/'],
+    scopes_supported: ['read', 'write']
+  });
+});
 
 app.post('/mcp',
   requireBearerAuth({
