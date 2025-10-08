@@ -1,8 +1,8 @@
 /**
- * MCP OAuth Hello World
+ * MCP OAuth Hello World - HTTP Server
  *
- * 1つのExpressサーバーで以下を統合:
- * - MCP Server (ChatGPT Connectorsからの接続)
+ * ChatGPT Connectors用のHTTPサーバー
+ * - MCP Server (HTTP transport)
  * - OAuth 2.1 Authorization Server (Dynamic Client Registration対応)
  * - Protected API (OAuth保護されたリソース)
  */
