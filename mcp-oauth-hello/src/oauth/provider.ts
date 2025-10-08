@@ -56,7 +56,7 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
 
     // デモ用: 自動承認（本番環境では同意画面を表示）
     const userId = 'user-1';
-    const scope = params.scope || 'read';
+    const scope = params.scopes?.join(' ') || 'read';
 
     // 認可コード保存（短命）
     this.codes.set(code, {
@@ -68,7 +68,7 @@ export class SimpleOAuthProvider implements OAuthServerProvider {
     });
 
     // リダイレクトURIに認可コードを付けて返す
-    const redirectUrl = new URL(params.redirect_uri);
+    const redirectUrl = new URL(params.redirectUri);
     redirectUrl.searchParams.set('code', code);
     if (params.state) {
       redirectUrl.searchParams.set('state', params.state);

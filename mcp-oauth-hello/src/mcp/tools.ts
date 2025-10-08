@@ -26,7 +26,8 @@ async function callAPI(endpoint: string): Promise<any> {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(`API Error: ${error.error} - ${error.error_description || ''}`);
+    const errorObj = error as { error: string; error_description?: string };
+    throw new Error(`API Error: ${errorObj.error} - ${errorObj.error_description || ''}`);
   }
 
   return response.json();
