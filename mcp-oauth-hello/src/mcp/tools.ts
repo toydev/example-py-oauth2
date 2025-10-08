@@ -2,35 +2,11 @@
  * MCP Tools
  *
  * 外部APIにアクセスするツール群
- * 開発用トークンで認証（後でOAuth認可サーバーと統合）
+ * OAuthトークンで認証
  */
 
 import { z } from 'zod';
-
-// 開発用トークン（後でOAuthトークンに置き換え）
-const DEV_TOKEN = 'dev-token-12345';
-const API_BASE = process.env.API_BASE || 'http://localhost:3000';
-
-/**
- * 外部APIへのHTTPリクエスト
- */
-async function callAPI(endpoint: string): Promise<any> {
-  const url = `${API_BASE}${endpoint}`;
-
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${DEV_TOKEN}`,
-      'Content-Type': 'application/json'
-    }
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(`API Error: ${error.error} - ${error.error_description}`);
-  }
-
-  return response.json();
-}
+import { callAPI } from '../client/apiClient.js';
 
 /**
  * ツール定義

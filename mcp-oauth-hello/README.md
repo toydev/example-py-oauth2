@@ -24,6 +24,7 @@ OAuth 2.1で保護されたMCPサーバーを2つの方法で提供：
 - ✅ **OAuth 2.1認可サーバー**: Authorization Code Grant + PKCE
 - ✅ **MCP Server (HTTP版)**: ChatGPT Connectors用（OAuth保護）
 - ✅ **MCP Server (stdio版)**: Claude Desktop/Claude Code用
+- ✅ **OAuth Client**: stdio版MCPツールからのブラウザ認可フロー
 - ✅ **保護されたAPI**: Bearer トークン認証（`/api/me`, `/api/posts`, `/api/profile`）
 - ✅ **Dynamic Client Registration**: RFC 7591準拠
 - ✅ **OAuthメタデータ**: RFC 8414準拠（/.well-known/oauth-authorization-server）
@@ -53,6 +54,12 @@ src/
   oauth/
     provider.ts        # OAuth 2.1 Provider（認可コード・トークン管理）
     clients.ts         # Dynamic Client Registration
+  client/
+    apiClient.ts       # OAuthクライアント（完全なOAuthフロー実装）
+    tokenStorage.ts    # トークン永続化（ファイルシステム）
+    callbackServer.ts  # OAuthコールバックサーバー（認可コード受信）
+    browser.ts         # ブラウザ起動ユーティリティ
+    oauthClient.ts     # OAuthClientProvider実装
   mcp/
     server.ts          # MCP共通ロジック
     tools.ts           # ツール定義（3つの読み取り専用ツール）
@@ -100,27 +107,51 @@ ngrok http 3000
 
 ### stdio版（Claude Desktop/Claude Code用）
 
-プロジェクトルートの`.mcp.json.example`を参照：
+**重要**: stdio版では、MCPツールが保護されたAPIにアクセスする際に、自動的にOAuthフローを開始します。
 
-```json
-{
-  "mcpServers": {
-    "external-api-client": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["tsx", "mcp-oauth-hello/src/stdio.ts"],
-      "env": {}
-    }
-  }
-}
-```
+#### セットアップ手順
 
-Claude Code用（相対パス）:
+1. **HTTP版サーバーを起動**（別ターミナル）
+   ```bash
+   cd mcp-oauth-hello
+   npm run http
+   ```
+
+2. **MCP設定を追加**
+
+   プロジェクトルートの`.mcp.json.example`を参照：
+   ```json
+   {
+     "mcpServers": {
+       "external-api-client": {
+         "type": "stdio",
+         "command": "npx",
+         "args": ["tsx", "mcp-oauth-hello/src/stdio.ts"],
+         "env": {}
+       }
+     }
+   }
+   ```
+
+3. **Claude Codeで使用**
+   ```bash
+   # プロジェクトルートに.mcp.jsonを配置
+   cp .mcp.json.example .mcp.json
+
+   # Claude Codeを再起動
+   ```
+
+#### OAuthフロー（初回のみ）
+
+1. Claude Codeで `get_demo_info` などのツールを呼び出す
+2. トークンがない場合、自動的にブラウザが開く
+3. ブラウザで認可を承認
+4. トークンが `~/.mcp-oauth-hello/tokens.json` に保存される
+5. 以降は保存されたトークンを使用（認可不要）
+
+トークンをクリアして再認可する場合：
 ```bash
-# プロジェクトルートに.mcp.jsonを配置
-cp .mcp.json.example .mcp.json
-
-# Claude Codeを再起動
+rm -rf ~/.mcp-oauth-hello
 ```
 
 ## MCPツール
